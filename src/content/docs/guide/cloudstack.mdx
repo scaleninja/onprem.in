@@ -1,6 +1,6 @@
 ---
-title: Apache CloudStack Ubuntu/KVM Install Guide
-description: The Apache CloudStack and Ubuntu/KVM IaaS Cloud Install Guide for x86_64 and ARM64
+title: Apache CloudStack Ubuntu/KVM Guide for x86_64 and ARM64
+description: The Apache CloudStack IaaS Cloud Install & Build Guide for Ubuntu/KVM x86_64 and ARM64
 sidebar:
   order: 1
   badge: Popular
@@ -8,29 +8,64 @@ sidebar:
 
 import { LinkButton } from '@astrojs/starlight/components';
 import { Badge } from '@astrojs/starlight/components';
-
-:::danger
-This is Work In Progress
-:::
-
-This is a build your own IaaS private cloud guide using Apache CloudStack,
-Ubuntu 24.04 (LTS) and KVM. If you're new to Apache CloudStack, here
-a video for you:
-[CloudStack 101: The Best Way to Build Your Private Cloud](https://www.youtube.com/watch?v=pASzZR57V_8)
-
-<iframe width="360" height="320" src="https://www.youtube.com/embed/pASzZR57V_8" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import loginImg from 'cloudstack/login.png';
+import addZoneImg from 'cloudstack/addzone.png';
+import rpiImg from 'cloudstack/rpi.jpg';
 
 :::note
-This guide was updated for `ACS v4.22`. This may get outdated in future,
-please [refer to the project's install guide](http://docs.cloudstack.apache.org/en/latest/installguide) and
+This guide was updated for `ACS v4.22` and tested on x86_64 and ARM64 hosts such
+as Intel NUCs, Beelink AMD mini-PCs, Dell rack servers, Raspberry Pi 4/5 and
+Ampere Ultra servers.
+
+This guide may get outdated in future, please [refer to the project's install
+guide](http://docs.cloudstack.apache.org/en/latest/installguide) and
 [docs on KVM host installation](http://docs.cloudstack.apache.org/en/latest/installguide/hypervisor/kvm.html).
 :::
 
+<img src={rpiImg.src} width={rpiImg.width} height={rpiImg.height} alt="CloudStack and RPi Board" />
+
+This guide covers the installation and build of Apache CloudStack IaaS cloud on
+Ubuntu using KVM, for both x86_64 and ARM64 architectures. If you're new to
+Apache CloudStack, here a video for you:
+[CloudStack 101: The Best Way to Build Your Private Cloud](https://www.youtube.com/watch?v=pASzZR57V_8)
+
+<iframe width="640" height="480" src="https://www.youtube.com/embed/pASzZR57V_8" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
 ## Getting Started
 
-First install Ubuntu 24.04 LTS on your x86_64 system that has at least 8GB RAM
-(prerably 16GB RAM or more) with Intel VT-X or AMD-V enabled. Ensure that the
-`universe` repository is enabled in `/etc/apt/sources.list`.
+First install Ubuntu 24.04/later LTS on your x86_64 or
+[ARM64](https://ubuntu.com/download/raspberry-pi) system.
+
+:::note
+Ensure Intel VT-X or AMD-V is available and enabled on the x86_64 hosts,
+preferably with 16 GB RAM or more.
+:::
+
+:::caution
+On ARM64 hosts, ensure 64-bit mode and GIC may need to be enabled in some
+systems, such as on Raspberry Pi 4/5:
+
+```astro title="/boot/firmware/config.txt" {2,3} ins="arm_64bit=1" del="enable_gic=1"
+[all]
+arm_64bit=1
+enable_gic=1
+
+# NVME speed config
+dtparam=nvme
+dtparam=pciex1_1=gen3
+dtparam=pciex1_gen=3
+
+# Current config
+usb_max_current_enable=1
+max_usb_current=1
+
+dtoverlay=vc4-kms-v3d
+disable_fw_kms_setup=1
+```
+:::
+
+Ensure that the `universe` repository is enabled in `/etc/apt/sources.list`.
 
 Install basic packages:
 
@@ -38,13 +73,25 @@ Install basic packages:
     apt-get install openntpd openssh-server sudo vim htop tar
 ```
 
-Optionally, if you've Intel based system install/update CPU microcode:
+Ensure that KVM is available at `/dev/kvm` or by running kvm-ok:
+
+```sh
+    apt-get install cpu-checker
+
+    #kvm-ok
+    INFO: /dev/kvm exists
+    KVM acceleration can be used
+```
+
+Optional: Intel based systems may benefit from CPU microcode install/update:
 
 ```sh
     apt-get install intel-microcode
 ```
 
-Allow the root user for ssh access using password, fix `/etc/ssh/sshd_config`.
+Allow the root user for ssh access using password, fix `/etc/ssh/sshd_config` to
+set `PermitRootLogin yes` and restart ssh using `systemctl restart ssh`.
+
 Change and remember the `root` password:
 
 ```sh
@@ -53,9 +100,11 @@ Change and remember the `root` password:
 
 ## Network Setup
 
-Setup Linux bridges that will handle CloudStack's public, guest, management
-and storage traffic. For simplicity, we will use a single bridge `cloudbr0` to
-be used for all these networks. Install bridge utilities:
+
+Next, setup host networking using Linux bridges that can handle CloudStack’s
+public, guest, management and storage traffic. For simplicity, a single bridge
+`cloudbr0` can be used for all traffic types on the same physical network. Install
+bridge utilities using:
 
 ```sh
     apt-get install bridge-utils
@@ -170,17 +219,19 @@ in mysql server's `/etc/mysql/mysql.conf.d/mysqld.cnf`:
     max_connections=1000
     log-bin=mysql-bin
     binlog-format = 'ROW'
+
+    #default-authentication-plugin=mysql_native_password
 ```
 
 Restart MySQL server and setup database:
 
 ```sh
     systemctl restart mysql
-    cloudstack-setup-databases cloud:cloud@localhost --deploy-as=root:<root password, or leave default blank if MySQL server has no root password> -i <cloudbr0 IP here>
+    cloudstack-setup-databases cloud:cloud@localhost --deploy-as=root: -i 192.168.1.10
 ```
 
 :::note
-Note the `-i` flag in the `cloudstack-setup-databases` command to override the IP address of the management server host if that's something different than what it detects automatically.
+Note the `-i` flag in the `cloudstack-setup-databases` command to override the IP address of the management server host if that's something different than what it detects automatically. The `--deploy-as` typically has `root` password, in this example its blank as root password is blank.
 :::
 
 ## Storage Setup
@@ -199,6 +250,10 @@ Create exports:
     exportfs -a
 ```
 
+:::tip
+The `/export` may even be a different disk or external storage, in which case you can format and mount it via `/etc/fstab`.
+:::
+
 Configure and restart NFS server:
 
 ```sh
@@ -208,6 +263,20 @@ Configure and restart NFS server:
     sed -i -e 's/^RPCRQUOTADOPTS=$/RPCRQUOTADOPTS="-p 875"/g' /etc/default/quota
     service nfs-kernel-server restart
 ```
+
+:::caution
+For ARM64 hosts, seed an appropriate arm64 based systemvm template manually from
+the management server for the specific CloudStack version, for example for 4.22:
+
+```sh
+wget http://download.cloudstack.org/systemvm/4.22/systemvmtemplate-4.22.0-aarch64-kvm.qcow2.bz2
+/usr/share/cloudstack-common/scripts/storage/secondary/cloud-install-sys-tmplt \
+          -m /export/secondary -f systemvmtemplate-4.22.0-aarch64-kvm.qcow2.bz2 -h kvm \
+          -o localhost -r cloud -d cloud
+```
+Future, CloudStack releases are working towards automating installation and
+upgrades of ARM64 systemvmtemplates.
+:::
 
 ## KVM Host Setup
 
@@ -228,20 +297,14 @@ Enable VNC for console proxy:
     sed -i -e 's/\#vnc_listen.*$/vnc_listen = "0.0.0.0"/g' /etc/libvirt/qemu.conf
 ```
 
-On older Ubuntu versions (18.04/20.04), enable libvirtd in listen mode:
-
-```sh
-    sed -i -e 's/.*libvirtd_opts.*/libvirtd_opts="-l"/' /etc/default/libvirtd
-```
-
-On Ubuntu 22.04/24.04 or later, add `LIBVIRTD_ARGS="--listen"` to `/etc/default/libvirtd` instead:
+On Ubuntu 22.04/24.04 or later, add `LIBVIRTD_ARGS="--listen"` to `/etc/default/libvirtd`:
 
 ```sh
     echo LIBVIRTD_ARGS=\"--listen\" >> /etc/default/libvirtd
 ```
 
-For older Ubuntu versions, the traditional socket/listen based configuration may
-not be supported out of the box. Run the following to get the old behaviour:
+The traditional socket/listen based configuration may not be supported with
+CloudStack, we can get the old behaviour using following:
 
 ```sh
     systemctl mask libvirtd.socket libvirtd-ro.socket libvirtd-admin.socket libvirtd-tls.socket libvirtd-tcp.socket
@@ -270,6 +333,27 @@ Configure default libvirtd config:
 The above libvirtd configuration is just for initial setup, when you add the KVM
 host in CloudStack by default the host will be configured to use a more secure
 mTLS configuration.
+:::
+
+:::danger
+On ARM64 hosts, please ensure the following options are set in the
+`/etc/cloudstack/agent/agent.properties`: (you may need to check/re-add these for
+your KVM host, post zone deployment)
+
+```
+guest.cpu.arch=aarch64
+guest.cpu.mode=host-passthrough
+host.cpu.manual.speed.mhz=1500
+```
+
+The `host.cpu.manual.speed.mhz` must be configured because Linux on ARM64 isn’t
+able to report the correct CPU speed on some ARM64 hosts.
+
+By default 1GB of host memory is reserved for agent/host usage, which you can
+change/reduce it using the following in the agent.properties file, for example:
+```
+host.reserved.mem.mb=800
+```
 :::
 
 :::caution
@@ -361,6 +445,8 @@ credentials (username `admin` and password `password`) on the URL:
 
 <Badge text="http://`192.168.1.10(i.e. the cloudbr0-IP)`:8080/client" variant="note" size="large" />
 
+<img src={loginImg.src} width={loginImg.width} height={loginImg.height} alt="CloudStack Login Page" />
+
 ## Deploy Your Private Cloud
 
 The following is an example of how you can setup an advanced zone (without security groups)
@@ -382,6 +468,8 @@ import { Steps } from '@astrojs/starlight/components';
     Internal DNS1 - 192.168.1.1
     Hypervisor - KVM
     ```
+
+    <img src={addZoneImg.src} width={addZoneImg.width} height={addZoneImg.height} alt="CloudStack Zone Wizard" />
 
 2. Setup Network
 
@@ -507,13 +595,14 @@ Further reading:
 - CloudStack [Networking Models - A Step-by-step Guide - Part 2](https://www.youtube.com/watch?v=hSfl2QfSJMg)
 - Project Documentation: [https://docs.cloudstack.apache.org/](https://docs.cloudstack.apache.org/)
 
+## Comments
 
 <script src="https://giscus.app/client.js"
         data-repo="rohityadavcloud/rohityadavcloud.github.io"
         data-repo-id="MDEwOlJlcG9zaXRvcnkzMDU5Nzk2"
         data-category="Comments"
         data-category-id="DIC_kwDOAC6wVM4Cwbtd"
-        data-mapping="blog/cloudstack-kvm/"
+        data-mapping="pathname"
         data-strict="0"
         data-reactions-enabled="1"
         data-emit-metadata="0"
@@ -524,179 +613,3 @@ Further reading:
         crossorigin="anonymous"
         async>
 </script>
-
-
---- End ---
-
-A page with a wide variety of different [Markdown syntax](https://starlight.astro.build/guides/authoring-content/) or [components](https://starlight.astro.build/components/using-components/) to show how these look together.
-See the following pages for individual examples.
-
-
-
-
-## Asides
-
-:::note
-A `:::note` block or `<Aside type="note">` looks like this.
-:::
-
-:::tip
-A `:::tip` block or `<Aside type="tip">` looks like this.
-:::
-
-:::caution
-A `:::caution` block or `<Aside type="caution">` looks like this.
-:::
-
-:::danger
-A `:::danger` block or `<Aside type="danger">` looks like this.
-:::
-
-## Blockquotes
-
-> Be not afeard; the isle is full of noises,  
-> Sounds and sweet airs, that give delight and hurt not.
-
-## Cards
-
-import { Card, CardGrid } from '@astrojs/starlight/components';
-
-<CardGrid>
-	<Card title="Check this out" icon="open-book">
-		Interesting content you want to highlight.
-	</Card>
-	<Card title="Other feature" icon="information">
-		More information you want to share.
-	</Card>
-	<Card title="Computer stuff" icon="laptop">
-		Build internet things with your computation machine.
-	</Card>
-	<Card title="Starlight ready" icon="starlight">
-		Just add Starlight and this theme comes to life.
-	</Card>
-</CardGrid>
-
-## Link cards
-
-import { LinkCard } from '@astrojs/starlight/components';
-
-<LinkCard
-	title="Internationalization"
-	href="https://starlight.astro.build/guides/i18n/"
-	description="Configure Starlight to support multiple languages."
-/>
-
-## Badges
-
-- <Badge text="Note" variant="note" />
-- <Badge text="Success" variant="success" />
-- <Badge text="Tip" variant="tip" />
-- <Badge text="Caution" variant="caution" />
-- <Badge text="Danger" variant="danger" />
-
-### Different sizes
-
-- <Badge text="Small" size="small" />
-- <Badge text="Medium" size="medium" />
-- <Badge text="Large" size="large" />
-
-## Code
-
-### With an editor frame
-
-```astro title="example.astro" {6} ins="insertions" del="deletions"
----
-// this is a code block example
----
-<p>Code can include something dynamic: {Astro.props.variable}</p>
-
-Or highlight important lines!
-
-Including insertions or deletions.
-```
-
-### Terminal commands
-
-```sh
-echo "Welcome, world!"
-```
-
-### Basic
-
-Code block without a frame:
-
-```js
-// for example
-console.log('Welcome, world!');
-```
-
-### Labels
-
-```jsx {"1":5} del={"2":7-8} ins={"3":10}
-// labeled-line-markers.jsx
-<button
-	role="button"
-	{...props}
-	value={value}
-	className={buttonClassName}
-	disabled={disabled}
-	active={active}
->
-	{children && !active && (typeof children === 'string' ? <span>{children}</span> : children)}
-</button>
-```
-
-## File tree
-
-import { FileTree } from '@astrojs/starlight/components';
-
-<FileTree>
-
-- astro.config.mjs
-- package.json
-- src
-  - components
-    - Header.astro
-    - Title.astro
-  - pages/
-
-</FileTree>
-
-## Link buttons
-
-<LinkButton href="/starlight-theme-flexoki/getting-started/">Get started</LinkButton>
-<LinkButton href="/starlight-theme-flexoki/configuration/" variant="secondary">
-	Configuration Reference
-</LinkButton>
-<LinkButton href="/starlight-theme-flexoki/configuration/" variant="minimal" icon="external">
-	Learn more
-</LinkButton>
-
-## Tabs
-
-import { Tabs, TabItem } from '@astrojs/starlight/components';
-
-<Tabs>
-	<TabItem label="Stars" icon="star">
-		Sirius, Vega, Betelgeuse
-	</TabItem>
-	<TabItem label="Moons" icon="moon">
-		Io, Europa, Ganymede
-	</TabItem>
-</Tabs>
-
-## Details
-
-<details>
-<summary>Where and when is the Andromeda constellation most visible?</summary>
-
-The [Andromeda constellation](<https://en.wikipedia.org/wiki/Andromeda_(constellation)>) is most visible in the night sky during the month of November at latitudes between `+90°` and `−40°`.
-
-</details>
-
-## Tables
-
-| Left         |     Centered     |                      Right |
-| :----------- | :--------------: | -------------------------: |
-| This is left | Text is centered |  And this is right-aligned |
-| More text    |  Even more text  | And even more to the right |

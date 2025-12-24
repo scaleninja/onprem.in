@@ -35,9 +35,10 @@ export default defineConfig({
                     label: 'Guides',
                     items: [
                         // Each item here is one entry in the navigation menu.
-                        { label: 'CloudStack Install Guide', slug: 'guides/cloudstack' },
-                        { label: 'Ceph Deployment Guide', slug: 'guides/ceph' },
-                        { label: 'Wireguard Setup Guide', slug: 'guides/wireguard' },
+                        { label: 'CloudStack Build Guide', slug: 'guide/cloudstack' },
+                        { label: 'Ceph Deployment Guide', slug: 'guide/ceph' },
+                        { label: 'Wireguard Setup Guide', slug: 'guide/wireguard' },
+                        { label: 'Sample', slug: 'guide/sample' },
                     ],
                 },
                 {
