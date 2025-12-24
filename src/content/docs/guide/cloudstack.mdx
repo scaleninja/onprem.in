@@ -452,6 +452,12 @@ credentials (username `admin` and password `password`) on the URL:
 
 <img src={loginImg.src} width={loginImg.width} height={loginImg.height} alt="CloudStack Login Page" />
 
+:::tip
+Along with the UI, CloudStack's official CLI `CloudMonkey` or `cmk` can be used
+to interact with the management server control plane. Learn more here:
+https://github.com/apache/cloudstack-cloudmonkey/wiki/Getting-Started
+:::
+
 ## Deploy Your Private Cloud
 
 The following is an example of how you can setup an advanced zone (without security groups)
@@ -583,6 +589,66 @@ You can register publicly available cloud-init enabled guest templates such as:
 | Debian 12 | [https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2](https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2) | [https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-arm64.qcow2](https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-arm64.qcow2) |
 | AlmaLinux 9 | [https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2](https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2) | [https://repo.almalinux.org/almalinux/9/cloud/aarch64/images/AlmaLinux-9-GenericCloud-latest.aarch64.qcow2](https://repo.almalinux.org/almalinux/9/cloud/aarch64/images/AlmaLinux-9-GenericCloud-latest.aarch64.qcow2) |
 | OpenSUSE 15 | [https://download.opensuse.org/distribution/leap/15.5/appliances/openSUSE-Leap-15.5-Minimal-VM.x86_64-Cloud.qcow2](https://download.opensuse.org/distribution/leap/15.5/appliances/openSUSE-Leap-15.5-Minimal-VM.x86_64-Cloud.qcow2) | [https://download.opensuse.org/distribution/leap/15.5/appliances/openSUSE-Leap-15.5-Minimal-VM.aarch64-Cloud.qcow2](https://download.opensuse.org/distribution/leap/15.5/appliances/openSUSE-Leap-15.5-Minimal-VM.aarch64-Cloud.qcow2) |
+
+:::tip
+Before deploying instances using cloud-init based templates, don't forget to
+register your SSH public key in your CloudStack account which you can do so
+using API/CLI or using UI under `Compute > SSH Key Pairs`.
+:::
+
+### Add Networks
+
+With the configured and deployed zone, once System VMs are up and running, you
+can create [isolated network or VPC for your
+account](https://docs.cloudstack.apache.org/en/latest/adminguide/networking.html)
+for the built-in admin account or any new user account you may created that
+can be later used to deploy instances.
+
+For simplicity, you may also create a shared network in the unused IP address
+space of your home/private network. For example, create shared network using
+API/CLI or UI under `Network > Guest Networks > Add Network > Shared` using:
+
+```
+Physical Network - cloudbr0
+VLAN/VNI - untagged
+IPv4 Gateway - 192.168.1.1
+IPv4 Netmask - 255.255.255.0
+IPv4 Start IP - 192.168.1.81
+IPv4 End IP - 192.168.1.100
+DNS1 - 192.168.1.1
+DNS2 - 1.1.1.1
+```
+
+### Deploying Instance
+
+In the UI, an instance can be created using the top navigation "Create" button
+or via `Compute > Instances > Add Instance` where you can specify a minimum of:
+
+```
+Zone - select the zone
+Arch - select your arch (x86_64 or ARM64)
+Image - select the registed template
+Compute Offering - select the offering (new ones can be created later on)
+Networks - select one or more network where you want to deploy this instance
+SSH key pairs - select one or more ssh public key pairs that you may have added
+Name - (optional) name of the instance
+```
+
+... and hit `Launch Instance` to create your instance!
+
+### Integrations
+
+CloudStack has several integrations, the following is a list of some of the
+popular or official ones:
+
+* CLI: https://github.com/apache/cloudstack-cloudmonkey
+* Terraform Provider: https://github.com/apache/cloudstack-terraform-provider (Te
+* Ansible: https://github.com/ngine-io/ansible-collection-cloudstack
+* Kubernetes integration: https://github.com/apache/cloudstack-kubernetes-provider
+* Kubernetes Cluster API Provider: https://github.com/kubernetes-sigs/cluster-api-provider-cloudstack
+* Go SDK: https://github.com/apache/cloudstack-go (for developers)
+* Benchmarking tool: https://github.com/apache/cloudstack-csbench
+* More here: https://cloudstack.apache.org/integrations
 
 ## Where to go next?
 
