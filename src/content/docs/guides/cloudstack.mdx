@@ -1,35 +1,36 @@
 ---
 title: Apache CloudStack Ubuntu/KVM Install Guide
-description: An IaaS Private Cloud Install Guide based on opensource Apache CloudStack, Ubuntu/Linux and KVM
+description: The Apache CloudStack and Ubuntu/KVM IaaS Cloud Install Guide for x86_64 and ARM64
 sidebar:
   order: 1
   badge: Popular
 ---
 
 import { LinkButton } from '@astrojs/starlight/components';
+import { Badge } from '@astrojs/starlight/components';
 
 :::danger
 This is Work In Progress
 :::
 
 This is a build your own IaaS private cloud guide using Apache CloudStack,
-Ubuntu 22.04/24.04 (LTS) and KVM. If you're new to Apache CloudStack, here
+Ubuntu 24.04 (LTS) and KVM. If you're new to Apache CloudStack, here
 a video for you:
 [CloudStack 101: The Best Way to Build Your Private Cloud](https://www.youtube.com/watch?v=pASzZR57V_8)
 
 <iframe width="360" height="320" src="https://www.youtube.com/embed/pASzZR57V_8" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 
 :::note
-This guide was updated for `ACS v4.20`. This may get outdated in future,
+This guide was updated for `ACS v4.22`. This may get outdated in future,
 please [refer to the project's install guide](http://docs.cloudstack.apache.org/en/latest/installguide) and
 [docs on KVM host installation](http://docs.cloudstack.apache.org/en/latest/installguide/hypervisor/kvm.html).
 :::
 
 ## Getting Started
 
-First install Ubuntu 22.04/24.04 LTS on your x86_64 system that has at
-least 8GB RAM (prerably 16GB RAM or more) with Intel VT-X or AMD-V enabled. Ensure
-that the `universe` repository is enabled in `/etc/apt/sources.list`.
+First install Ubuntu 24.04 LTS on your x86_64 system that has at least 8GB RAM
+(prerably 16GB RAM or more) with Intel VT-X or AMD-V enabled. Ensure that the
+`universe` repository is enabled in `/etc/apt/sources.list`.
 
 Install basic packages:
 
@@ -63,7 +64,7 @@ be used for all these networks. Install bridge utilities:
 This guide assumes that you're in a 192.168.1.0/24 network which is a typical
 RFC1918 private network.
 
-### Ubuntu 22.04/24.04
+### Ubuntu Netplan Config
 
 Starting Ubuntu bionic, admins can use `netplan` to configure networking. The
 default installation creates a file at `/etc/netplan/50-cloud-init.yaml` that
@@ -96,7 +97,8 @@ your network and interface/name specific changes:
 ```
 
 :::note
-You will need to replace `eno1` with the name of the physical NIC on your host.
+You may need to replace `eno1` with the name of the physical NIC on your host,
+and replace the `192.168.1.10/24` to the IP address of your host.
 :::
 
 :::tip
@@ -125,17 +127,18 @@ Apply network config and reboot/re-ssh:
 
 ## Repo Setup
 
-For Ubuntu 22.04, 24.04 and onwards run this to setup the CloudStack repository:
+Setup the repository on your Ubuntu host:
 
 ```sh
     mkdir -p /etc/apt/keyrings
     wget -O- http://packages.shapeblue.com/release.asc | gpg --dearmor | sudo tee /etc/apt/keyrings/cloudstack.gpg > /dev/null
 
-    echo deb [signed-by=/etc/apt/keyrings/cloudstack.gpg] http://packages.shapeblue.com/cloudstack/upstream/debian/4.20 / > /etc/apt/sources.list.d/cloudstack.list
+    echo deb [signed-by=/etc/apt/keyrings/cloudstack.gpg] http://packages.shapeblue.com/cloudstack/upstream/debian/4.22 / > /etc/apt/sources.list.d/cloudstack.list
     apt-get update -y
 ```
 
-This should be run on all hosts where CloudStack software packages (management server, usage server, agent etc) needs to be installed.
+This should be run on all hosts where CloudStack software packages (management
+server, usage server, agent etc) needs to be installed, esp if you've multiple hosts.
 
 ## Management Server Setup
 
@@ -176,6 +179,10 @@ Restart MySQL server and setup database:
     cloudstack-setup-databases cloud:cloud@localhost --deploy-as=root:<root password, or leave default blank if MySQL server has no root password> -i <cloudbr0 IP here>
 ```
 
+:::note
+Note the `-i` flag in the `cloudstack-setup-databases` command to override the IP address of the management server host if that's something different than what it detects automatically.
+:::
+
 ## Storage Setup
 
 Install NFS server:
@@ -204,13 +211,16 @@ Configure and restart NFS server:
 
 ## KVM Host Setup
 
+:::tip
+Configure the [CloudStack repo](#repo-setup) on your KVM host if it's not the management server host
+:::
+
 Install KVM and CloudStack agent, configure libvirt:
 
 ```sh
     apt-get install qemu-kvm cloudstack-agent
 ```
 
-Note: configure the [CloudStack repo](#repo-setup) if your KVM host is not also the management server
 
 Enable VNC for console proxy:
 
@@ -224,14 +234,14 @@ On older Ubuntu versions (18.04/20.04), enable libvirtd in listen mode:
     sed -i -e 's/.*libvirtd_opts.*/libvirtd_opts="-l"/' /etc/default/libvirtd
 ```
 
-On Ubuntu 22.04, add `LIBVIRTD_ARGS="--listen"` to `/etc/default/libvirtd` instead:
+On Ubuntu 22.04/24.04 or later, add `LIBVIRTD_ARGS="--listen"` to `/etc/default/libvirtd` instead:
 
 ```sh
     echo LIBVIRTD_ARGS=\"--listen\" >> /etc/default/libvirtd
 ```
 
-For Ubuntu 20.04/22.04/24.04 and later, the traditional socket/listen based configuration
-may not be supported, we can get the old behaviour as follows:
+For older Ubuntu versions, the traditional socket/listen based configuration may
+not be supported out of the box. Run the following to get the old behaviour:
 
 ```sh
     systemctl mask libvirtd.socket libvirtd-ro.socket libvirtd-admin.socket libvirtd-tls.socket libvirtd-tcp.socket
@@ -239,7 +249,7 @@ may not be supported, we can get the old behaviour as follows:
 ```
 
 Configure libvirt to connect to libvirtd and not to per-driver daemons, especially important on newer distros
-such as EL9 and Ubuntu 24.04 by editing the ``/etc/libvirt/libvirt.conf`` and add the following:
+such as Ubuntu 24.04 (and EL9) by editing the ``/etc/libvirt/libvirt.conf`` and adding the following:
 
 ```astro title="/etc/libvirt/libvirt.conf" {1}
       remote_mode="legacy"
@@ -262,6 +272,7 @@ host in CloudStack by default the host will be configured to use a more secure
 mTLS configuration.
 :::
 
+:::caution
 On certain hosts where you may be running docker and other services, you may
 need to add the following in `/etc/sysctl.conf` and then run `sysctl -p`:
 
@@ -273,10 +284,11 @@ need to add the following in `/etc/sysctl.conf` and then run `sysctl -p`:
 ```sh
     sysctl -p
 ```
+:::
 
-Optional: If you've a  server vendor, they may fail to make each server unique
-and libvirtd can complain that servers are not unique. To make them unique setup
-host specific UUID in libvirtd config:
+:::tip
+Optional: If you're using a non-compliant server vendor or virtual environment,
+in some cases you may need to configure unique host ID for libvirt:
 
 ```sh
     apt-get install uuid
@@ -284,8 +296,9 @@ host specific UUID in libvirtd config:
     echo host_uuid = \"$UUID\" >> /etc/libvirt/libvirtd.conf
     systemctl restart libvirtd
 ```
+:::
 
-## Configure Firewall
+## Firewall Setup
 
 By default `ufw` may be disabled and this may not be required. If your system
 uses `ufw` (you can check using `ufw status`), you may run the following:
@@ -332,9 +345,10 @@ You must check and disable apparmour:
     apparmor_parser -R /etc/apparmor.d/usr.lib.libvirt.virt-aa-helper
 ```
 
-## Launch Management Server
+## Start Control Plane
 
-Start your cloud:
+Start your cloud management control plane by setting up the CloudStack
+management server:
 
 ```sh
     cloudstack-setup-management
@@ -342,11 +356,12 @@ Start your cloud:
     tail -f /var/log/cloudstack/management/management-server.log
 ```
 
-After management server is UP, proceed to http://`192.168.1.10(i.e. the cloudbr0-IP)`:8080/client
-and log in using the default credentials - username `admin` and password
-`password`.
+After the CloudStack management server is up, log into the management server using the default
+credentials (username `admin` and password `password`) on the URL:
 
-## Build Your Private Cloud
+<Badge text="http://`192.168.1.10(i.e. the cloudbr0-IP)`:8080/client" variant="note" size="large" />
+
+## Deploy Your Private Cloud
 
 The following is an example of how you can setup an advanced zone (without security groups)
 in a typical (home/private) 192.168.1.0/24 network.
@@ -417,8 +432,8 @@ import { Steps } from '@astrojs/starlight/components';
     it](https://askubuntu.com/questions/469143/how-to-enable-ssh-root-access-on-ubuntu-14-04).
     The recommended approach is to add the KVM host using ssh public-key based
     access, add the management server SSH public key which is usually at
-    /var/cloudstack/management/.ssh/id_rsa.pub to the root user of the KVM host(s)
-    at /root/.ssh/authorized_keys.
+    `/var/cloudstack/management/.ssh/id_rsa.pub` to the root user of the KVM host(s)
+    at `/root/.ssh/authorized_keys`.
 
 7. Add primary storage:
 
@@ -468,13 +483,13 @@ import { Steps } from '@astrojs/starlight/components';
 
 You can register publicly available cloud-init enabled guest templates such as:
 
-- Ubuntu 24.04: [https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img](https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img)
-- Ubuntu 22.04: [https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-amd64.img](https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-amd64.img)
-- Ubuntu 20.04: [https://cloud-images.ubuntu.com/releases/20.04/release/ubuntu-20.04-server-cloudimg-amd64.img](https://cloud-images.ubuntu.com/releases/20.04/release/ubuntu-20.04-server-cloudimg-amd64.img)
-- Debian 12: [https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2](https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2)
-- AlmaLinux 8: [https://repo.almalinux.org/almalinux/8/cloud/x86_64/images/AlmaLinux-8-GenericCloud-latest.x86_64.qcow2](https://repo.almalinux.org/almalinux/8/cloud/x86_64/images/AlmaLinux-8-GenericCloud-latest.x86_64.qcow2)
-- AlmaLinux 9: [https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2](https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2)
-- OpenSUSE 15: [https://download.opensuse.org/distribution/leap/15.5/appliances/openSUSE-Leap-15.5-Minimal-VM.x86_64-Cloud.qcow2](https://download.opensuse.org/distribution/leap/15.5/appliances/openSUSE-Leap-15.5-Minimal-VM.x86_64-Cloud.qcow2)
+| Distro | x86_64 | ARM64 |
+| :------------- | :----- | :---- |
+| Ubuntu 24.04 | [https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img](https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img) | [https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img](https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img) |
+| Ubuntu 22.04 | [https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-amd64.img](https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-amd64.img) | [https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-arm64.img](https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-arm64.img) |
+| Debian 12 | [https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2](https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2) | [https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-arm64.qcow2](https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-arm64.qcow2) |
+| AlmaLinux 9 | [https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2](https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2) | [https://repo.almalinux.org/almalinux/9/cloud/aarch64/images/AlmaLinux-9-GenericCloud-latest.aarch64.qcow2](https://repo.almalinux.org/almalinux/9/cloud/aarch64/images/AlmaLinux-9-GenericCloud-latest.aarch64.qcow2) |
+| OpenSUSE 15 | [https://download.opensuse.org/distribution/leap/15.5/appliances/openSUSE-Leap-15.5-Minimal-VM.x86_64-Cloud.qcow2](https://download.opensuse.org/distribution/leap/15.5/appliances/openSUSE-Leap-15.5-Minimal-VM.x86_64-Cloud.qcow2) | [https://download.opensuse.org/distribution/leap/15.5/appliances/openSUSE-Leap-15.5-Minimal-VM.aarch64-Cloud.qcow2](https://download.opensuse.org/distribution/leap/15.5/appliances/openSUSE-Leap-15.5-Minimal-VM.aarch64-Cloud.qcow2) |
 
 ## Where to go next?
 
@@ -493,8 +508,31 @@ Further reading:
 - Project Documentation: [https://docs.cloudstack.apache.org/](https://docs.cloudstack.apache.org/)
 
 
+<script src="https://giscus.app/client.js"
+        data-repo="rohityadavcloud/rohityadavcloud.github.io"
+        data-repo-id="MDEwOlJlcG9zaXRvcnkzMDU5Nzk2"
+        data-category="Comments"
+        data-category-id="DIC_kwDOAC6wVM4Cwbtd"
+        data-mapping="blog/cloudstack-kvm/"
+        data-strict="0"
+        data-reactions-enabled="1"
+        data-emit-metadata="0"
+        data-input-position="top"
+        data-theme="preferred_color_scheme"
+        data-lang="en"
+        data-loading="lazy"
+        crossorigin="anonymous"
+        async>
+</script>
+
+
+--- End ---
+
 A page with a wide variety of different [Markdown syntax](https://starlight.astro.build/guides/authoring-content/) or [components](https://starlight.astro.build/components/using-components/) to show how these look together.
 See the following pages for individual examples.
+
+
+
 
 ## Asides
 
@@ -549,8 +587,6 @@ import { LinkCard } from '@astrojs/starlight/components';
 />
 
 ## Badges
-
-import { Badge } from '@astrojs/starlight/components';
 
 - <Badge text="Note" variant="note" />
 - <Badge text="Success" variant="success" />
