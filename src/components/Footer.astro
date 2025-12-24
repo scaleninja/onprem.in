@@ -1,0 +1,130 @@
+---
+// Footer component for OnPrem.in
+const currentYear = new Date().getFullYear();
+---
+
+<footer class="site-footer">
+  <div class="footer-container">
+    <div class="footer-section">
+      <h3>OnPrem.in</h3>
+      <p>Build your own private cloud infrastructure with open source technologies.</p>
+    </div>
+
+    <div class="footer-section">
+      <h4>Guides</h4>
+      <ul>
+        <li><a href="/guide/cloudstack/">Apache CloudStack</a></li>
+        <li><a href="/guide/ceph/">Ceph Storage</a></li>
+        <li><a href="/guide/wireguard/">WireGuard VPN</a></li>
+      </ul>
+    </div>
+
+    <div class="footer-section">
+      <h4>Resources</h4>
+      <ul>
+        <li><a href="/reference/">Reference</a></li>
+        <li><a href="https://github.com/rohityadavcloud" target="_blank" rel="noopener">GitHub</a></li>
+      </ul>
+    </div>
+
+    <div class="footer-section">
+      <h4>Legal</h4>
+      <ul>
+        <li><a href="/privacy/">Privacy Policy</a></li>
+        <li><a href="/terms/">Terms of Use</a></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="footer-bottom">
+    <p> Built 🛠️ with  🌱 by <a href="https://yadv.in" target="_blank">Rohit Yadav</a><br/>
+      <strong style="display:none">ラᑕᐱᒪⲶΠ I Πノ人</strong>
+    </p>
+  </div>
+</footer>
+
+<style>
+  .site-footer {
+    background-color: var(--sl-color-bg-nav);
+    border-top: 1px solid var(--sl-color-hairline-light);
+    padding: 3rem 1rem 1.5rem;
+    margin-top: 4rem;
+  }
+
+  .footer-container {
+    max-width: var(--sl-content-width);
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 2rem;
+    margin-bottom: 2rem;
+  }
+
+  .footer-section h3 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--sl-color-white);
+    margin: 0 0 0.5rem 0;
+  }
+
+  .footer-section h4 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--sl-color-white);
+    margin: 0 0 0.75rem 0;
+  }
+
+  .footer-section p {
+    color: var(--sl-color-gray-2);
+    font-size: 0.9rem;
+    line-height: 1.6;
+    margin: 0;
+  }
+
+  .footer-section ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .footer-section li {
+    margin-bottom: 0.5rem;
+  }
+
+  .footer-section a {
+    color: var(--sl-color-gray-2);
+    text-decoration: none;
+    font-size: 0.9rem;
+    transition: color 0.2s ease;
+  }
+
+  .footer-section a:hover {
+    color: var(--sl-color-white);
+    text-decoration: underline;
+  }
+
+  .footer-bottom {
+    max-width: var(--sl-content-width);
+    margin: 0 auto;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--sl-color-hairline-light);
+    text-align: center;
+  }
+
+  .footer-bottom p {
+    color: var(--sl-color-gray-3);
+    font-size: 0.85rem;
+    margin: 0;
+  }
+
+  @media (max-width: 768px) {
+    .footer-container {
+      grid-template-columns: 1fr;
+      gap: 2rem;
+    }
+
+    .site-footer {
+      padding: 2rem 1rem 1rem;
+    }
+  }
+</style>

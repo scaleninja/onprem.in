@@ -46,6 +46,9 @@ export default defineConfig({
                     autogenerate: { directory: 'reference' },
                 },
             ],
+            components: {
+                Footer: './src/components/Footer.astro',
+            },
             customCss: [
                 // Relative path to your custom CSS file
                 './src/styles/custom.css',
