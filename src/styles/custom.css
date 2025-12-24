@@ -3,8 +3,8 @@
   --sl-text-5xl: 3.5rem;
 }
 
-[data-theme="light"] {
-  --sl-color-bg: #FDFDF7;
-  --sl-color-bg-nav: #FDFDF7;
-  --sl-color-bg-sidebar: #FDFDF7;
-}
+#[data-theme="light"] {
+#  --sl-color-bg: #FDFDF7;
+#  --sl-color-bg-nav: #FDFDF7;
+#  --sl-color-bg-sidebar: #FDFDF7;
+#}
