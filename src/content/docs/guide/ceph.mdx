@@ -1,0 +1,351 @@
+---
+title: Ceph Storage with CloudStack on Ubuntu/KVM
+description: Software-Defined Storage Install Guide
+sidebar:
+  order: 2
+---
+
+import dashImg from 'ceph/dashboard.png';
+import psImg from 'ceph/storage.png';
+
+In this post, we look at how to deploy a Ceph cluster (v18 +) and then use that
+with Apache CloudStack and KVM on Ubuntu 22.04/24.04.
+
+:::note
+Refer to [Ceph docs](https://docs.ceph.com/en/reef/install) as necessary. If
+you're new to Ceph, you can [start
+here](https://docs.ceph.com/en/reef/start/intro/), or deep dive into the
+[architecture](https://docs.ceph.com/en/pacific/architecture/). This guide may
+get outdated in future.
+:::
+
+This references the ShapeBlue three-part Ceph and CloudStack blog series:
+
+[https://www.shapeblue.com/ceph-and-cloudstack-part-1/](https://www.shapeblue.com/ceph-and-cloudstack-part-1/)
+
+[https://www.shapeblue.com/ceph-and-cloudstack-part-2/](https://www.shapeblue.com/ceph-and-cloudstack-part-2/)
+
+[https://www.shapeblue.com/ceph-and-cloudstack-part-3/](https://www.shapeblue.com/ceph-and-cloudstack-part-3/)
+
+## Host Configuration
+
+In the this Ceph cluster, we've three hosts/nodes that serve as both `mon` and
+`osd` nodes, and one admin node that is used to server as `mgr` and run the Ceph
+dashboard.
+
+```
+    192.168.1.10 mgmt    # Admin/mgr and dashboard
+    192.168.1.11 kvm1    # mon and osd
+    192.168.1.12 kvm2    # mon and osd
+    192.168.1.13 kvm3    # mon and osd
+```
+
+:::note
+Replace the names with hostnames of your hosts.
+:::
+
+Configure SSH config on admin or management node:
+
+```
+    tee -a ~/.ssh/config<<EOF
+    Host *
+        UserKnownHostsFile /dev/null
+        StrictHostKeyChecking no
+        IdentitiesOnly yes
+        ConnectTimeout 0
+        ServerAliveInterval 300
+    EOF
+```
+
+### Install `cephadm`
+
+Newer Ceph versions recommend using `cephadm` to install and manage Ceph cluster
+using containers and systemd.
+[Cephadm](https://docs.ceph.com/en/reef/cephadm) requirements include
+python3, systemd, podman or docker, ntp and lvm2. Let's install them on all
+nodes:
+
+```sh
+    sudo apt-get install -y python3 ntp lvm2 libvirt-daemon-driver-storage-rbd
+```
+
+Install podman:
+
+```sh
+    sudo apt-get update
+    sudo apt-get -y install podman
+```
+
+Finally, configure the ceph repository (reef/v18 in this example) and install
+`cephadm` and `ceph-common` on all the nodes:
+
+```sh
+    wget https://download.ceph.com/keys/release.asc -O /etc/apt/keyrings/ceph.asc
+    wget -q -O- 'https://download.ceph.com/keys/release.asc' | sudo apt-key add -
+    echo "deb [signed-by=/etc/apt/keyrings/ceph.asc] http://download.ceph.com/debian-reef/ $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/ceph.list
+    apt-get update
+    apt-get install -y cephadm ceph-common
+```
+
+If you install `cephadm` using wget, you can add specific release repos using:
+
+```sh
+    cephadm install ceph-common
+```
+
+## Bootstrap Cluster
+
+Bootstrap Ceph cluster by running the following only on the admin node
+(192.168.1.10 in the example):
+
+```sh
+    cephadm bootstrap --mon-ip 192.168.1.10 \
+                      --initial-dashboard-user admin \
+                      --initial-dashboard-password Passw0rdHere \
+                      --allow-fqdn-hostname
+```
+
+On successful run, the above command will bootstrap a Ceph cluster with ceph
+config in `/etc/ceph/ceph.conf` and SSH public key `/etc/ceph/ceph.pub` using
+container images that are orchestrated by podman.
+
+The dashboard will be available on the mon IP https://192.168.1.10:8443/ which
+you can log in using the user `admin` and password as provided in the command
+(`Passw0rdHere` in the example above).
+
+Copy the ceph SSH public key across other nodes (from the admin/mgmt node):
+
+```sh
+    ssh-copy-id -f -i /etc/ceph/ceph.pub root@192.168.1.11
+    ssh-copy-id -f -i /etc/ceph/ceph.pub root@192.168.1.12
+    ssh-copy-id -f -i /etc/ceph/ceph.pub root@192.168.1.13
+```
+
+### Add hosts
+
+Add hosts after disabling automatic `mon` deployment:
+
+```sh
+    ceph orch apply mon --unmanaged
+    ceph orch host add kvm1 192.168.1.11
+    ceph orch host add kvm2 192.168.1.12
+    ceph orch host add kvm3 192.168.1.13
+```
+
+### Add Monitors
+
+Read more about [monitors here](https://docs.ceph.com/en/pacific/cephadm/services/mon/).
+
+Optional, specify monitor traffic/CIDR:
+
+```sh
+    ceph config set mon public_network 192.168.1.0/24
+```
+
+Add mons:
+
+```sh
+    ceph orch daemon add mon kvm1:192.168.1.11
+    ceph orch daemon add mon kvm2:192.168.1.12
+    ceph orch daemon add mon kvm3:192.168.1.13
+```
+
+Now, enable automatic placement of daemons:
+
+```sh
+    ceph orch apply mon --placement="kvm1,kvm2,kvm3" --dry-run
+    ceph orch apply mon --placement="kvm1,kvm2,kvm3"
+```
+
+### Add OSDs
+
+Read more about [OSD
+here](https://docs.ceph.com/en/reef/cephadm/services/osd/).
+
+List available physical disks of the added hosts:
+
+```sh
+    ceph orch device ls
+```
+
+Then, use the syntax to specify the host and device you want to add as OSD (for ex. if the device is /dev/sdb):
+
+```sh
+     ceph orch daemon add osd kvm1:/dev/sdb
+     ceph orch daemon add osd kvm2:/dev/sdb
+     ceph orch daemon add osd kvm3:/dev/sdb
+```
+
+Finally, you may check your osds across hosts with:
+
+```sh
+    ceph osd tree
+```
+
+:::tip
+Optional: Additional admin host
+
+Hosts with `_admin` label will have ceph.conf and client.admin keyring copied to
+`/etc/ceph` that allows hosts access the `ceph` CLI. For example, add the label
+as:
+
+```sh
+    ceph orch host label add kvm1 _admin
+```
+:::
+
+## Disable SSL on Dashboard
+
+This is optional and more useful in test/homelab environments. To disable SSL on
+Ceph Dashboard when, for example, using inside an internal network:
+
+```sh
+    ceph config set mgr mgr/dashboard/ssl false
+    ceph config set mgr mgr/dashboard/server_addr 192.168.1.10
+    ceph config set mgr mgr/dashboard/server_port 8000
+    ceph dashboard set-grafana-api-ssl-verify False
+    ceph mgr module disable dashboard
+    ceph mgr module enable dashboard
+```
+
+Now, the dashboard is accessible over http://192.168.1.10:8000/
+
+## Tuning Ceph Cluster
+
+Refer https://docs.ceph.com/en/latest/start/hardware-recommendations/#memory
+
+For example, configure per OSD memory limit and MDS cache memory limit to 2GB each (or as required):
+
+```sh
+    ceph config set osd osd_memory_target 2G
+    ceph config set mds mds_cache_memory_limit 2G
+```
+
+You confirm the value using the `ceph config get <key> <config>` command, for example:
+
+```sh
+    ceph config get osd osd_memory_target
+    ceph config get mds mds_cache_memory_limit
+    ceph config get mon public_network
+```
+
+## Using Ceph Storage with CloudStack
+
+Check Ceph status using the following command (or using the Ceph dashboard):
+
+```sh
+    ceph -s
+```
+
+<img src={dashImg.src} width={dashImg.width} height={dashImg.height} alt="Ceph Dashboard" />
+
+:::note
+It appears there is a Ceph limitation (at least seen in newer versions) which causes Ceph storage to not add in CloudStack.
+This was [reported and discussed in an issue](https://github.com/apache/cloudstack/issues/5741#issuecomment-990669423) and
+the workaround seems to set the following configuration in ceph before adding the Ceph pool(s) to CloudStack:
+
+```sh
+ceph config set mon auth_expose_insecure_global_id_reclaim false
+ceph config set mon mon_warn_on_insecure_global_id_reclaim_allowed false
+ceph config set mon auth_allow_insecure_global_id_reclaim false
+ceph orch restart mon
+```
+:::
+
+Once you've ensure your Ceph cluster is up and healthy, let's create a new Ceph
+pool and add to CloudStack:
+
+```sh
+    ceph osd pool create cloudstack 64 replicated
+    ceph osd pool set cloudstack size 3
+    rbd pool init cloudstack
+```
+
+Next, create a dedicated auth key for this pool:
+
+```sh
+    ceph auth get-or-create client.cloudstack mon 'profile rbd' osd 'profile rbd pool=cloudstack'
+```
+
+Finally, you can add this pool as a CloudStack zone-wide Ceph primary storage
+using the above credential as RADOS secret for the user `cloudstack` as well
+specify the monitor domain or IP with a storage tag. For example:
+
+<img src={psImg.src} width={psImg.width} height={psImg.height} alt="CloudStack and Ceph primary storage pool" />
+
+Next, you can create specific compute and disk offering with the same storage
+tag so VM deployments would use your newly added Ceph storage pool.
+
+## CephFS
+
+[CephFS](https://docs.ceph.com/en/pacific/cephfs/index.html) is a
+POSIX-compliant file system over RADOS. I've started using CephFS as a
+distributed-shared directory for storing documents and photos which along with
+rsync allows me to keep all my home computers in sync with each other.
+
+To create a CephFS (say with the name `cephfs`), simply run:
+
+```sh
+     ceph fs volume create cephfs
+```
+
+That's it!
+
+Now to mount and use CephFS on your client/computer, you can either use Ceph
+FUSE or on Linux environment simply use the kernel based module. For that
+install `ceph-common`:
+
+```sh
+    sudo apt-get install ceph-common
+```
+
+Authorise client on the `mon` host and save output as config on the client host at
+`/etc/ceph/ceph.client.rohit.keyring` (replace `rohit` with username of your choice:
+
+```sh
+    sudo ceph fs authorize cephfs client.rohit / rw
+```
+
+Now, you can mount your CephFS named `cephfs` using (replace `rohit` with username of your choice:
+
+```sh
+    sudo mount -t ceph 192.168.1.11:6789:/ ceph -o name=rohit,secret=<password secret without quotes>
+```
+
+:::note
+You can create dedicated client for use with your CephFS as noted above.
+:::
+
+:::tip
+To make this mountable using `mount -a` or upon your Linux machine boot, you can put
+this in your `/etc/fstab` where you can specify multiple `mon` hosts IPs (this
+assumes port 6789 by default when not explicitly defined):
+
+```
+    192.168.1.11,192.168.1.12,192.168.1.13:/ /home/rohit/ceph  ceph  name=rohit,secret=<SecretHere>,defaults 0 2
+```
+
+Then somethine like `rsync` can be used with cephfs mount to backup/sync local files:
+```sh
+    rsync -avzP --delete-after documents/ ceph/documents/
+```
+:::
+
+## Comments
+
+<script src="https://giscus.app/client.js"
+        data-repo="rohityadavcloud/rohityadavcloud.github.io"
+        data-repo-id="MDEwOlJlcG9zaXRvcnkzMDU5Nzk2"
+        data-category="Comments"
+        data-category-id="DIC_kwDOAC6wVM4Cwbtd"
+        data-mapping="pathname"
+        data-strict="0"
+        data-reactions-enabled="1"
+        data-emit-metadata="0"
+        data-input-position="top"
+        data-theme="preferred_color_scheme"
+        data-lang="en"
+        data-loading="lazy"
+        crossorigin="anonymous"
+        async>
+</script>
